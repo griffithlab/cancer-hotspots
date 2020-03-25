@@ -1,5 +1,7 @@
 """
-Usage: explore_hotspots_results.py input_dir output_file 
+Usage: python3 explore_hotspots_results.py input_dir output_file
+
+Parses hotspot pVACtools results files for further analysis
 """
 
 import os
@@ -7,92 +9,146 @@ import sys
 import re
 import pandas as pd
 
-# input arguments
-working_dir=os.getcwd()
-input_dir=sys.argv[1]
-output_filename=sys.argv[2]
-output_file=f'{working_dir}/{output_filename}'
-          
-# functions
-def length_count(df, message):
-    unique_seqs = df['MT Epitope Seq'].unique().tolist()
-    len_seqs = [len(x) for x in unique_seqs]
-    len_dict = {f'{message} Length Count {x}': len_seqs.count(x) for x in set(len_seqs)}
-    len_df = pd.DataFrame(len_dict, index=[0])
-    return len_df
+def identify_neoantigens(df):
+    """Identify class I and II neoantigens from pVACtools total predictions df
 
-# list of files to parse
-open_files = [f for f in sorted(os.listdir(f'{working_dir}/{input_dir}/'))] # if os.path.isfile(f) and f.endswith("_TUMOR.all_epitopes.tsv")]
-for file1 in open_files:
-    df_input = pd.read_csv(f'{input_dir}/{file1}', sep='\t')
-    # identifying constant and variable portions of the file
-    df_constant = df_input[["Chromosome", "Start", "Stop", "Reference", "Variant", "Transcript", "Ensembl Gene ID", "Variant Type", "Mutation", "Protein Position", "Gene Name", "HGVSp"]]
-    df_variable = df_input[["HLA Allele", "Peptide Length", "Sub-peptide Position", "Mutation Position", "MT Epitope Seq", "WT Epitope Seq", "Median MT Score", "Median WT Score", "Median Fold Change"]]
-    df_variable = df_variable.drop_duplicates()
-    # class I and II predictions
-    #df_variable_classI = df_variable.loc[df_variable['HLA Allele'].str.contains("HLA-A|HLA-B|HLA-C")]
-    #df_variable_classII = df_variable.loc[~df_variable['HLA Allele'].str.contains("HLA-A|HLA-B|HLA-C")]
+    Args:
+        df (dataframe): pVACtools total predictions df
 
+    Returns:
+        tuple: df for classI neoantigens, df for classII neoantigens, dictionary with score-based output
+    """
+    # score-based output
+    df_low_score = df_variable.loc[df_variable["Median MT Score"] <= 50]
+    df_med_score = df_variable.loc[(df_variable["Median MT Score"] > 50) & (df_variable["Median MT Score"] <= 500)]
+    df_high_score = df_variable.loc[(df_variable["Median MT Score"] > 500) & (df_variable["Median MT Score"] <= 1000)]
+    score = [("low", len(df_low_score)), ("med", len(df_med_score)), ("high", len(df_high_score))]
+    score_dict = {x:y for (x,y) in score}
+    # anchor neoantigen output
+    df_neoantigen = pd.concat([df_low_score, df_med_score])
+    class_I = [i for i in df_neoantigen["HLA Allele"] if any(x in i for x in ["HLA-A", "HLA-B", "HLA-C"])]
+    class_II = [i for i in df_neoantigen["HLA Allele"] if any(x in i for x in ["DP", "DQ", "DR"])]
+    index_list_classI = []
+    index_list_classII = []
+    for row_index,row in df_neoantigen.iterrows():
+        hla, wt_score, fold_change, mutation_position, seq_length = (row["HLA Allele"], row["Median WT Score"], row["Median Fold Change"], row["Mutation Position"], row["Peptide Length"])
+        # class I - first and last 3 sequence positions are considered anchor positions
+        anchor_positions = list(range(1,seq_length+1))[0:3] + list(range(1,seq_length+1))[(seq_length-3):seq_length]
+        if hla in class_I:
+            # mt does not bind better than wt
+            if fold_change <= 1:
+                # if mutation NOT in an anchor position
+                if mutation_position not in anchor_positions:
+                    #print(f'{row_index} fc <= 1, not in anchor pos')
+                    index_list_classI.append(row_index)
+            # mt does bind better than wt
+            elif fold_change > 1:
+                # if mutation NOT in an anchor position
+                if mutation_position not in anchor_positions:
+                    #print(f'{row_index} fc > 1, not in anchor pos')
+                    index_list_classI.append(row_index)
+                # if mutation is in anchor position
+                elif mutation_position in anchor_positions:
+                    # and wt score is at least high than a typical neoantigen
+                    if wt_score > 500:
+                        #print(f'{row_index} fc > 1, in anchor pos, wt score > 500')
+                        index_list_classI.append(row_index)
+        # no anchor position parameters - only filter binding affinity < 500nM
+        elif hla in class_II:
+            index_list_classII.append(row_index)
+    df_neo_output_classI = df_neoantigen.loc[index_list_classI, :]
+    df_neo_output_classII = df_neoantigen.loc[index_list_classII, :]
+    return df_neo_output_classI, df_neo_output_classII, score_dict
+
+def parse_predictions(df, messages):
+    """Return general stats of df predictions
+
+    Args:
+        df (dataframe): pVACtools df
+        messages (list): descriptive name + abbreviation for resulting column ex: [Neoantigens, Neo]
+
+    Returns:
+        dataframe: column = name, row = count
+    """
     # explore df.variable
     variable_dict = {}
-    columns = ["HLA Allele", "Peptide Length", "Mutation Position", "MT Epitope Seq"]
+    columns = ["HLA Allele", "MT Epitope Seq"]
+    variable_dict[messages[0]] = len(df)
     for item in columns:
-        item_set = df_variable[item].unique()
-        unique_count = len(item_set)
-        variable_dict[item] = item_set.tolist()
+        item_set = df[item].unique()
+        item_name = f'item {messages[1]}'
+        variable_dict[item_name] = [len(item_set)]
+        output_df = pd.DataFrame(variable_dict, index=[0])
+    return output_df
+
+def find_min_prediction(df):
+    """Find the best scoring prediction for class I and II HLA alleles
+
+    Args:
+        df (dataframe): pVACtools class I/II neoantigens df
+
+    Returns:
+        dataframe: columns = name, row = minimum prediction attributes
+    """
+    # minimun median mt score - full line
+    min_score_line = df[df["Median MT Score"] == df["Median MT Score"].min()]
+    columns = ["HLA Allele", "MT Epitope Seq", "Median MT Score"]
+    min_dict = {}
+    for item in columns:
+        min_dict[item] = min_score_line[item].values[0]
+    output_df = pd.DataFrame(min_dict, index=[0])
+    return output_df if len(df) != 0 else pd.DataFrame({columns[0]: "NA", columns[1]: "NA", columns[2]: "NA"}, index=[0])
+
+def length_count(df, message):
+    """Find the number of mut sequences that correspond to each peptide length
+
+    Args:
+        df (dataframe): pVACtools df
+        message (str): descriptive prefix for resulting column name (ex: Neo for neoantigen)
     
-    # counting how many seqs go with each hla allele
-    len_dict = {}
-    for item in df_variable['HLA Allele'].unique():
-        df_subset = df_variable.loc[df_variable['HLA Allele'] == item]
-        df_len = len(df_subset.index)
-        len_dict[item] = df_len
-    
-    # how many hla alleles
-    alleles_num = len(variable_dict["HLA Allele"])
-    # how many neoantigen sequences
-    seqs_num = len(variable_dict["MT Epitope Seq"])
-    # score category counts from original file
-    score_50 = len(df_variable.loc[df_variable["Median MT Score"] < 50])
-    score_500 = len(df_variable.loc[(df_variable["Median MT Score"] >= 50) & (df_variable["Median MT Score"] <= 500)])
-    score_over_500 = len(df_variable.loc[df_variable["Median MT Score"] > 500])
-    # df with only Median MT Score <= 500 nM
-    df_neoantigen = df_variable.loc[df_variable["Median MT Score"] <= 500]
-    # how many hla alleles in df_neoantigen
-    alleles_num_neo = len(df_neoantigen["HLA Allele"].unique().tolist())
-    # how many neoantigen sequences in df_neoantigen
-    seqs_num_neo = len(df_neoantigen["MT Epitope Seq"].unique().tolist())
-    # minimun median score - full line
-    min_score_line = df_neoantigen[df_neoantigen["Median MT Score"] == df_neoantigen["Median MT Score"].min()]
-    # check out values[0] error
-    if len(min_score_line) != 0:
-    	min_allele = min_score_line["HLA Allele"].values[0]
-    	min_seqs = min_score_line["MT Epitope Seq"].values[0]
-    	min_score = min_score_line["Median MT Score"].values[0]
-    else:
-        print('df_neoantigen length:' + str(len(df_neoantigen)))
-        min_allele = "NA"
-        min_seqs = "NA"
-        min_score = "NA"
-    # length counts
-    len_df = length_count(df_variable, "Seq")
-    neo_df = length_count(df_neoantigen, "Neo")
-    # constant variant info
+    Return:
+        df (dataframe): columns = message + peptide length, row = mut sequence count per peptide length
+    """
+    unique_seqs = df['MT Epitope Seq'].unique().tolist()
+    len_seqs = [len(x) for x in unique_seqs]
+    len_dict = {f'{message} Length {x}': len_seqs.count(x) for x in set(len_seqs)}
+    len_df = pd.DataFrame(len_dict, index=[0])
+    return len_df
+        
+input_dir=sys.argv[1]
+output_filename=sys.argv[2]
+working_dir=os.getcwd()
+output_file=f'{working_dir}/{output_filename}'
+
+open_files = [f for f in sorted(os.listdir(input_dir)) if f.endswith("_TUMOR.all_epitopes.tsv")]
+#open_files = [f for f in sorted(os.listdir(f'{working_dir}/{input_dir}/')) if f.endswith("_TUMOR.all_epitopes.tsv")] 
+for file1 in open_files:
+    df_input = pd.read_csv(f'{input_dir}/{file1}', sep='\t')
+    # constant per file
+    df_constant = df_input[["Chromosome", "Start", "Stop", "Reference", "Variant", "Transcript", "Ensembl Gene ID", "Variant Type", "Mutation", "Protein Position", "Gene Name", "HGVSp"]]
     constant_line = df_constant.drop_duplicates()
-    # colnames of file
-    final_cols_to_df = ["Total Predictions", "HLA Alleles", "MT Epitope Seqs", "Scores 50", "Scores 50-500", "Scores 500",
-                        "Total Neoantigens", "HLA Alleles Neo", "MT Epitope Seqs Neo",
-                        "HLA Allele Min", "MT Epitope Seq Min", "Median MT Score Min"]
-    # output for each column
-    final_cols_output = [len(df_variable), alleles_num, seqs_num, score_50, score_500, score_over_500, len(df_neoantigen), alleles_num_neo, seqs_num_neo, min_allele, min_seqs, min_score]
-    # zip the two and create a dictionary
-    final_cols_dict = {x:y for x,y in zip(final_cols_to_df, final_cols_output)}
-    # create a df from the dictionary
-    final_cols_df = pd.DataFrame(final_cols_dict, index=[0])
-    # concatenate all dfs
-    final_write_df = pd.concat([constant_line, final_cols_df, len_df, neo_df], axis=1, join='inner')
-    print(file1)
-    # add df to final output file
+    # unique for each line
+    df_variable = df_input[["HLA Allele", "Peptide Length", "Sub-peptide Position", "Mutation Position", "MT Epitope Seq", "WT Epitope Seq", "Median MT Score", "Median WT Score", "Median Fold Change"]]
+    df_variable = df_variable.drop_duplicates()
+
+    file_info = pd.DataFrame({"File Name": file1},index=[0])
+    constant_line = df_constant.drop_duplicates()
+    
+    neo_classI, neo_classII, neo_score_dict = identify_neoantigens(df_variable)
+    
+    total_pred = parse_predictions(df_variable, ["Predictions", "Total"])
+    classI_pred = parse_predictions(neo_classI, ["Neo Class I", "ClassI"])
+    classII_pred = parse_predictions(neo_classII, ["Neo Class II", "ClassII"])
+
+    classI_min = find_min_prediction(neo_classI)
+    classII_min = find_min_prediction(neo_classII)
+    
+    total_len = length_count(df_variable, "Seq")
+    neo_len = length_count(pd.concat([neo_classI, neo_classII]), "Neo")
+
+    final_df_list = [file_info, constant_line, total_pred, classI_pred, classII_pred, classI_min, classII_min, total_len, neo_len] 
+    final_write_df = pd.DataFrame(final_df_list, index=[0])
+
     if os.path.isfile(output_file):
         final_write_df.to_csv(output_file, mode = 'a', index=False, header=None)
     else:
