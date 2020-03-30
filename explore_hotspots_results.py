@@ -100,16 +100,16 @@ def find_min_prediction(df, hla_class):
     Returns:
         dataframe: columns = name, row = minimum prediction attributes
     """
-    min_score_line = df[df["Median MT Score"] == df["Median MT Score"].min()]
     columns = ["HLA Allele", "MT Epitope Seq", "Median MT Score"]
-    min_dict = {}
-    new_columns = []
-    for item in columns:
-        new_columns.append(f'{hla_class} {item}')
-        min_dict[item] = min_score_line[item].values[0]
-    output_df = pd.DataFrame(min_dict, index=[0])
-    output_df.rename(columns = {x:y for x,y in zip(columns, new_columns)}, inplace = True)
-    return output_df if len(df) != 0 else pd.DataFrame({new_columns[0]: "NA", new_columns[1]: "NA", new_columns[2]: "NA"}, index=[0])
+    new_columns = [f'{hla_class} {x}' for x in columns]
+    if len(df) > 0:
+        min_score_line = df[df["Median MT Score"] == df["Median MT Score"].min()]
+        min_dict = {x: min_score_line[x].values[0] for x in columns}
+        output_df = pd.DataFrame(min_dict, index=[0])
+        output_df.rename(columns = {x:y for x,y in zip(columns, new_columns)}, inplace = True)
+    else:
+        output_df = pd.DataFrame({x: "NA" for x in new_columns}, index=[0])
+    return output_df
 
 def length_count(df, message):
     """Find the number of mut sequences that correspond to each peptide length
@@ -121,10 +121,14 @@ def length_count(df, message):
     Return:
         dataframe: columns = message + peptide length, row = mut sequence count per peptide length
     """
-    unique_seqs = df['MT Epitope Seq'].unique().tolist()
-    len_seqs = [len(x) for x in unique_seqs]
-    len_dict = {f'{message} Length {x}': len_seqs.count(x) for x in set(len_seqs)}
-    len_df = pd.DataFrame(len_dict, index=[0])
+    peptide_len = [8,9,10,11,15]
+    if len(df) > 0:
+        unique_seqs = df['MT Epitope Seq'].unique().tolist()
+        len_seqs = [len(x) for x in unique_seqs]
+        len_dict = {f'{message} Length {x}': len_seqs.count(x) for x in set(len_seqs)}
+        len_df = pd.DataFrame(len_dict, index=[0])
+    else:
+        len_df = pd.DataFrame({f'{message} Length {x}': "NA" for x in peptide_len}, index=[0])
     return len_df
         
 input_dir=sys.argv[1]
@@ -152,13 +156,13 @@ for file1 in open_files:
 
     total_scores = score_intervals(df_variable, "Total")
     classI_scores = score_intervals(df_classI, "ClassI")
-    classII_scores = score_intervals(df_classII, "Class II")
+    classII_scores = score_intervals(df_classII, "ClassII")
 
     total_pred = parse_predictions(df_variable, ["Total Predictions", "Total"])
-    classI_pred = parse_predictions(df_classI, ["Class I Predictions", "ClassI"])
-    classI_neo_pred = parse_predictions(neo_classI, ["Neo Class I Predictions", "Neo ClassI"])
-    classII_pred = parse_predictions(df_classII, ["Class II Predictions", "ClassII"])
-    classII_neo_pred = parse_predictions(neo_classII, ["Neo Class II Predictions", "Neo ClassII"])
+    classI_pred = parse_predictions(df_classI, ["ClassI Predictions", "ClassI"])
+    classI_neo_pred = parse_predictions(neo_classI, ["Neo ClassI Predictions", "Neo ClassI"])
+    classII_pred = parse_predictions(df_classII, ["ClassII Predictions", "ClassII"])
+    classII_neo_pred = parse_predictions(neo_classII, ["Neo ClassII Predictions", "Neo ClassII"])
 
     classI_min = find_min_prediction(neo_classI, "ClassI")
     classII_min = find_min_prediction(neo_classII, "ClassII")
