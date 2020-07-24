@@ -1,0 +1,89 @@
+
+# shell script to count rows for each gene in chromosomes 6-10
+# OUTPUT: tsv file with gene names and neoantigen counts 
+
+cd /gscmnt/gc2142/griffithlab/mrichters/hotspots_analysis/variant_tsvs_6-X
+
+lastGene="FGFR2" # starts with FGFR2 because that's the first gene in the directory 
+lastCount=0
+for file in *tsv
+do
+gene=$(tail -n +2 $file | cut -f12 | uniq)
+neo=$(tail -n +2 $file | wc -l) # counts number of rows in file 
+if [ $gene == $lastGene ]
+then
+lastCount=$(($lastCount + $neo)) # multiple variant files can correspond to the same gene 
+else
+echo $lastGene$'\t'$lastCount
+lastGene=$gene
+lastCount=$neo
+fi
+done > /gscmnt/gc2142/griffithlab/abasu/6-X_genes_neoantigen_count.tsv
+echo $lastGene$'\t'$lastCount >> /gscmnt/gc2142/griffithlab/abasu/6-X_genes_neoantigen_count.tsv
+
+# shell script to count rows for each gene in chromosomes 1-5
+# OUTPUT: tsv file with gene names and neoantigen counts 
+
+cd /gscmnt/gc2142/griffithlab/mrichters/hotspots_analysis/variant_tsvs_1-5
+
+lastGene="MTOR" # starts with MTOR because that's the first gene in the directory 
+lastCount=0
+for file in *tsv
+do
+gene=$(tail -n +2 $file | cut -f12 | uniq)
+neo=$(tail -n +2 $file | wc -l)
+if [ $gene == $lastGene ]
+then
+lastCount=$(($lastCount + $neo))
+else
+echo $lastGene$'\t'$lastCount
+lastGene=$gene
+lastCount=$neo
+fi
+done > /gscmnt/gc2142/griffithlab/abasu/1-5_genes_neoantigen_count.tsv
+echo $lastGene$'\t'$lastCount >> /gscmnt/gc2142/griffithlab/abasu/1-5_genes_neoantigen_count.tsv
+
+
+# new folder to contain tsv files for all genes with HLA allele and binding affinity columns for all neoantigens of that gene  
+
+mkdir /gscmnt/gc2142/griffithlab/abasu/gene_binding_affinity
+
+cd /gscmnt/gc2142/griffithlab/mrichters/hotspots_analysis/variant_tsvs_6-X
+
+for file in *.tsv
+do  
+gene=$(tail -n +2 $file | cut -f12 | uniq)
+tail -n +2 $file | cut -f15,25 >> /gscmnt/gc2142/griffithlab/abasu/gene_binding_affinity/${gene}.tsv
+done
+
+cd /gscmnt/gc2142/griffithlab/mrichters/hotspots_analysis/variant_tsvs_1-5
+
+for file in *.tsv
+do  
+gene=$(tail -n +2 $file | cut -f12 | uniq)
+tail -n +2 $file | cut -f15,25 >> /gscmnt/gc2142/griffithlab/abasu/gene_binding_affinity/${gene}.tsv
+done
+
+# ran python script on all tsv files in gene_binding_affinity folder on cluster
+# split_class_hotspot_graph_data.py in GitHub
+# OUTPUT: For each gene, 4 tsv files for Graph D/E ClassI/II 
+
+while IFS= read -r line; do echo "bsub -g '/gscuser/abasu/graph_data_split' -J $line -q research-hpc -a 'docker(registry.gsc.wustl.edu/genome/genome_perl_environment)' -M 12000000 -R 'select[mem>12000] span[hosts=1] rusage[mem=12000]' -oo /gscmnt/gc2142/griffithlab/abasu/split_class_hotspot_graph_data/$line.log python3 /gscmnt/gc2142/griffithlab/abasu/split_class_hotspot_graph_data.py $line" | /bin/bash; done < "/gscmnt/gc2142/griffithlab/abasu/genes_214.tsv"
+
+# merged Graph D/E ClassI/II data for all genes 
+# OUTPUT: 4 merged files with all Graph D/E ClassI/II data  
+
+cd /gscmnt/gc2142/griffithlab/abasu/split_class_hotspot_graph_data
+
+cat *Graph_D_Class1_Data.tsv > /gscmnt/gc2142/griffithlab/abasu/Graph_D_Class1_Data.tsv
+cat *Graph_D_Class2_Data.tsv > /gscmnt/gc2142/griffithlab/abasu/Graph_D_Class2_Data.tsv
+cat *Graph_E_Class1_Data.tsv > /gscmnt/gc2142/griffithlab/abasu/Graph_E_Class1_Data.tsv
+cat *Graph_E_Class2_Data.tsv > /gscmnt/gc2142/griffithlab/abasu/Graph_E_Class2_Data.tsv
+
+
+# Created Graphs in R with GraphD_E.R (Script in GitHub)
+
+
+
+
+
