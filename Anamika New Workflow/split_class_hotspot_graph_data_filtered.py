@@ -82,6 +82,18 @@ with open(graph_d_c2, 'wt') as out_file:
 freqs = pd.read_csv('/gscmnt/gc2142/griffithlab/abasu/Global_HLA_Freq.csv')
 freqs.set_index("Allele", inplace=True)
 
+class1_allele = []
+class2_allele = []
+for r in range(0, len(df)):
+    if "D" in df.iloc[r, 0]:
+        class2_allele.append(df.iloc[r, 0])
+    else:
+        class1_allele.append(df.iloc[r, 0])
+
+class1 = pd.DataFrame(class1_allele, columns =['Allele'])
+class2 = pd.DataFrame(class2_allele, columns =['Allele'])
+
+
 allele_freq_c1 = []
 for r in range(0,len(class1.index.values)):
     allele = class1.iloc[r,0]
@@ -93,10 +105,11 @@ for r in range(0,len(class1.index.values)):
 
 allele_freq_c2 = []
 for r in range(0,len(class2.index.values)):
-    allele = class2.iloc[r,0]
+    allele = class2.iloc[r,0]. #where I left off
     if allele in freqs.index.values:
         freq = freqs.loc[[allele][0]][0]
         allele_freq_c2.append(freq)
+    elif "/" in allele
     else:
         allele_freq_c2.append(0)
 
