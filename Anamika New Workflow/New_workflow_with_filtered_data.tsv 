@@ -1,0 +1,64 @@
+-------Graphs D and E workflow-------
+
+# OUTPUT: created smaller tsv files for all 214 genes with relevant columns
+# 15 - allele, 16 - peptide length, 18 - mutation position, 25 - median MT score, 26 - median WT score, 27 - fold change 
+# only considered binding affinities <= 500 nM with awk command 
+
+cd /gscmnt/gc2142/griffithlab/mrichters/hotspots_analysis/variant_tsvs_1-5 
+
+for file in *.tsv
+do  
+gene=$(tail -n +2 $file | cut -f12 | uniq)
+tail -n +2 $file | cut -f15,16,18,25,26,27 | awk '($4 <= 500)' >> /gscmnt/gc2142/griffithlab/abasu/gene_filtered_neo/${gene}.tsv
+done
+
+# OUTPUT: same as above for genes in chromosomes 6 - X
+
+cd /gscmnt/gc2142/griffithlab/mrichters/hotspots_analysis/variant_tsvs_6-X
+
+for file in *.tsv
+do  
+gene=$(tail -n +2 $file | cut -f12 | uniq)
+tail -n +2 $file | cut -f15,16,18,25,26,27 | awk '($4 <= 500)' >> /gscmnt/gc2142/griffithlab/abasu/gene_filtered_neo/${gene}.tsv
+done
+
+# split_class_hotspot_graph_data_filtered.py and genes_214 in Gtihub
+# OUTPUT: For each gene, 4 tsv files for Graph D/E ClassI/II, which can be found at /gscmnt/gc2142/griffithlab/abasu/split_class_hotspot_graph_data_filtered
+
+
+bgadd "/gscuser/abasu/graph_data_split_filtered_2"
+
+while IFS= read -r line; do echo "bsub -g '/gscuser/abasu/graph_data_split_filtered_2' -J $line -q research-hpc -a 'docker(registry.gsc.wustl.edu/genome/genome_perl_environment)' -M 12000000 -R 'select[mem>12000] span[hosts=1] rusage[mem=12000]' -oo /gscmnt/gc2142/griffithlab/abasu/split_class_hotspot_graph_data_filtered/$line.log python3 /gscmnt/gc2142/griffithlab/abasu/split_class_hotspot_graph_data_filtered.py $line" | /bin/bash; done < "/gscmnt/gc2142/griffithlab/abasu/genes_214.tsv"
+
+
+# merged Graph D/E ClassI/II data for all genes 
+# OUTPUT: 4 merged files with all Graph D/E ClassI/II data  
+
+cd /gscmnt/gc2142/griffithlab/abasu/split_class_hotspot_graph_data_filtered
+
+cat *_Graph_D_Class1_Data.tsv > /gscmnt/gc2142/griffithlab/abasu/Graph_D_Class1_Data_Filtered.tsv
+cat *_Graph_D_Class2_Data.tsv > /gscmnt/gc2142/griffithlab/abasu/Graph_D_Class2_Data_Filtered.tsv
+cat *_Graph_E_Class1_Data.tsv > /gscmnt/gc2142/griffithlab/abasu/Graph_E_Class1_Data_Filtered.tsv
+cat *_Graph_E_Class2_Data.tsv > /gscmnt/gc2142/griffithlab/abasu/Graph_E_Class2_Data_Filtered.tsv
+
+
+# graph data with Graph_D_Merged.R in Github, similar script for Graph E
+
+-------Summary Figure-------
+
+# summary_figure_filtered.py and genes_214 in Gtihub
+# OUTPUT: For each gene, tsv file with max HLA allele frequency and total number of neoantigens, which can be found at hotspot_graph_summary_data_filtered
+
+while IFS= read -r line; do echo "bsub -g '/gscuser/abasu/summary_figure_filtered_2' -J $line -q research-hpc -a 'docker(registry.gsc.wustl.edu/genome/genome_perl_environment)' -M 12000000 -R 'select[mem>12000] span[hosts=1] rusage[mem=12000]' -oo /gscmnt/gc2142/griffithlab/abasu/hotspot_graph_summary_data_filtered/$line.log python3 /gscmnt/gc2142/griffithlab/abasu/summary_figure_filtered.py $line" | /bin/bash; done < "/gscmnt/gc2142/griffithlab/abasu/genes_214.tsv"
+
+# OUTPUT: merged Summary figure file with max HLA allele frequency and total neoantigen count for all genes
+
+cd /gscmnt/gc2142/griffithlab/abasu/hotspot_graph_summary_data_filtered
+
+cat *Summary_Fig_Data.tsv > /gscmnt/gc2142/griffithlab/abasu/Summary_Fig_Filtered_Data.tsv
+
+# graph data with Summary_Fig.R in Github 
+
+
+
+
