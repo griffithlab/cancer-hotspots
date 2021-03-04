@@ -18,40 +18,25 @@ def identify_neoantigens(df):
     Returns:
         tuple: df for classI neoantigens, df for classII neoantigens
     """
-    df_neoantigen = df.loc[df["Median MT Score"] <= 500]
-    class_I = [i for i in df_neoantigen["HLA Allele"] if any(x in i for x in ["HLA-A", "HLA-B", "HLA-C"])]
-    class_II = [i for i in df_neoantigen["HLA Allele"] if any(x in i for x in ["DP", "DQ", "DR"])]
-    index_list_classI = []
-    index_list_classII = []
-    for row_index,row in df_neoantigen.iterrows():
+    df_neo = df.loc[df["Median MT Score"] <= 500]
+    classI_neo = df_neo[df_neo['HLA Allele'].str.contains("HLA-A|HLA-B|HLA-C")].reset_index(drop=True)
+    classII_neo = df_neo[df_neo['HLA Allele'].str.contains("DP|DQ|DR")].reset_index(drop=True)
+    for row_index,row in classI_neo.iterrows():
         hla, wt_score, fold_change, mutation_position, seq_length = (row["HLA Allele"], row["Median WT Score"], row["Median Fold Change"], row["Mutation Position"], row["Peptide Length"])
         # class I - first and last 3 sequence positions are considered anchor positions
         anchor_positions = list(range(1,seq_length+1))[0:3] + list(range(1,seq_length+1))[(seq_length-3):seq_length]
-        if hla in class_I:
-            # mt does not bind better than wt
-            if fold_change <= 1:
-                # if mutation NOT in an anchor position
-                if mutation_position not in anchor_positions:
-                    #print(f'{row_index} fc <= 1, not in anchor pos')
-                    index_list_classI.append(row_index)
-            # mt does bind better than wt
-            elif fold_change > 1:
-                # if mutation NOT in an anchor position
-                if mutation_position not in anchor_positions:
-                    #print(f'{row_index} fc > 1, not in anchor pos')
-                    index_list_classI.append(row_index)
-                # if mutation is in anchor position
-                elif mutation_position in anchor_positions:
-                    # and wt score is at least high than a typical neoantigen
-                    if wt_score > 500:
-                        #print(f'{row_index} fc > 1, in anchor pos, wt score > 500')
-                        index_list_classI.append(row_index)
-        # no anchor position parameters - only filter binding affinity < 500nM
-        elif hla in class_II:
-            index_list_classII.append(row_index)
-    df_neo_output_classI = df_neoantigen.loc[index_list_classI, :]
-    df_neo_output_classII = df_neoantigen.loc[index_list_classII, :]
-    return df_neo_output_classI, df_neo_output_classII
+        if fold_change <= 1:
+            # if mutation in an anchor position, drop neo
+            if mutation_position in anchor_positions:
+                classI_neo = classI_neo.drop(row_index)
+        # mt binds better than wt
+        if fold_change > 1:
+            # if mutation is in anchor position
+            if mutation_position in anchor_positions:
+                # but wt score is a good binder, drop neo
+                if wt_score < 500:
+                    classI_neo = classI_neo.drop(row_index)
+    return classI_neo, classII_neo
 
 def score_intervals(df, message):
     """Find number of predictions per score intervals for pVACtools predictions df
@@ -140,17 +125,16 @@ open_files = [f for f in sorted(os.listdir(input_dir)) if f.endswith("_TUMOR.all
 for file1 in open_files:
     df_input = pd.read_csv(f'{input_dir}/{file1}', sep='\t')
     # constant info per file
-    df_constant = df_input[["Chromosome", "Start", "Stop", "Reference", "Variant", "Transcript", "Ensembl Gene ID", "Variant Type", "Mutation", "Protein Position", "Gene Name", "HGVSp"]]
+    df_constant = df_input[["Chromosome", "Start", "Stop", "Reference", "Variant", "Transcript", "Ensembl Gene ID", "Variant Type", "Mutation", "Protein Position", "Gene Name", "HGVSc", "HGVSp"]]
     constant_line = df_constant.drop_duplicates()
     # unique info per line
     df_variable = df_input[["HLA Allele", "Peptide Length", "Sub-peptide Position", "Mutation Position", "MT Epitope Seq", "WT Epitope Seq", "Median MT Score", "Median WT Score", "Median Fold Change"]]
-    df_variable.loc[df_variable["Median MT Score"] <= 50]
-    df_variable = df_variable.drop_duplicates()
+    #df_variable.loc[df_variable["Median MT Score"] <= 50]
+    #df_variable = df_variable.drop_duplicates()
     df_classI = df_variable.loc[df_variable["HLA Allele"].str.contains("HLA-A|HLA-B|HLA-C")]
-    df_classII = df_variable.loc[~df_variable["HLA Allele"].str.contains("HLA-A|HLA-B|HLA-C")]
+    df_classII = df_variable.loc[df_variable["HLA Allele"].str.contains("DP|DQ|DR")]
 
     file_info = pd.DataFrame({"File Name": file1},index=[0])
-    constant_line = df_constant.drop_duplicates()
     
     neo_classI, neo_classII = identify_neoantigens(df_variable)
 
@@ -164,11 +148,11 @@ for file1 in open_files:
     classII_pred = parse_predictions(df_classII, ["ClassII Predictions", "ClassII"])
     classII_neo_pred = parse_predictions(neo_classII, ["Neo ClassII Predictions", "Neo ClassII"])
 
-    classI_min = find_min_prediction(neo_classI, "ClassI")
-    classII_min = find_min_prediction(neo_classII, "ClassII")
+    #classI_min = find_min_prediction(neo_classI, "ClassI")
+    #classII_min = find_min_prediction(neo_classII, "ClassII")
     
-    total_len = length_count(df_variable, "Seq")
-    neo_len = length_count(pd.concat([neo_classI, neo_classII]), "Neo")
+    #total_len = length_count(df_variable, "Seq")
+    #neo_len = length_count(pd.concat([neo_classI, neo_classII]), "Neo")
 
     final_df_list = [file_info, constant_line, total_pred, classI_pred, classI_neo_pred, classII_pred, classII_neo_pred, total_scores, classI_scores, classII_scores, classI_min, classII_min, total_len, neo_len]
     df_merged = pd.concat(final_df_list, join='outer', axis=1)
