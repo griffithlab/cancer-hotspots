@@ -22,7 +22,7 @@ def identify_neoantigens(df):
     classI_neo = df_neo[df_neo['HLA Allele'].str.contains("HLA-A|HLA-B|HLA-C")].reset_index(drop=True)
     classII_neo = df_neo[df_neo['HLA Allele'].str.contains("DP|DQ|DR")].reset_index(drop=True)
     for row_index,row in classI_neo.iterrows():
-        hla, wt_score, fold_change, mutation_position, seq_length = (row["HLA Allele"], row["Median WT Score"], row["Median Fold Change"], row["Mutation Position"], row["Peptide Length"])
+        wt_score, fold_change, mutation_position, seq_length = (row["Median WT Score"], row["Median Fold Change"], row["Mutation Position"], row["Peptide Length"])
         # class I - first and last 3 sequence positions are considered anchor positions
         anchor_positions = list(range(1,seq_length+1))[0:3] + list(range(1,seq_length+1))[(seq_length-3):seq_length]
         if fold_change <= 1:
@@ -75,46 +75,46 @@ def parse_predictions(df, messages):
         output_df = pd.DataFrame(variable_dict, index=[0])
     return output_df
 
-def find_min_prediction(df, hla_class):
-    """Find the best scoring prediction for class I and II HLA alleles
+# def find_min_prediction(df, hla_class):
+#     """Find the best scoring prediction for class I and II HLA alleles
 
-    Args:
-        df (dataframe): pVACtools class I/II neoantigens df
-        hla_class (string): "ClassI" or "ClassII" 
+#     Args:
+#         df (dataframe): pVACtools class I/II neoantigens df
+#         hla_class (string): "ClassI" or "ClassII" 
 
-    Returns:
-        dataframe: columns = name, row = minimum prediction attributes
-    """
-    columns = ["HLA Allele", "MT Epitope Seq", "Median MT Score"]
-    new_columns = [f'{hla_class} {x}' for x in columns]
-    if len(df) > 0:
-        min_score_line = df[df["Median MT Score"] == df["Median MT Score"].min()]
-        min_dict = {x: min_score_line[x].values[0] for x in columns}
-        output_df = pd.DataFrame(min_dict, index=[0])
-        output_df.rename(columns = {x:y for x,y in zip(columns, new_columns)}, inplace = True)
-    else:
-        output_df = pd.DataFrame({x: "NA" for x in new_columns}, index=[0])
-    return output_df
+#     Returns:
+#         dataframe: columns = name, row = minimum prediction attributes
+#     """
+#     columns = ["HLA Allele", "MT Epitope Seq", "Median MT Score"]
+#     new_columns = [f'{hla_class} {x}' for x in columns]
+#     if len(df) > 0:
+#         min_score_line = df[df["Median MT Score"] == df["Median MT Score"].min()]
+#         min_dict = {x: min_score_line[x].values[0] for x in columns}
+#         output_df = pd.DataFrame(min_dict, index=[0])
+#         output_df.rename(columns = {x:y for x,y in zip(columns, new_columns)}, inplace = True)
+#     else:
+#         output_df = pd.DataFrame({x: "NA" for x in new_columns}, index=[0])
+#     return output_df
 
-def length_count(df, message):
-    """Find the number of mut sequences that correspond to each peptide length
+# def length_count(df, message):
+#     """Find the number of mut sequences that correspond to each peptide length
 
-    Args:
-        df (dataframe): pVACtools df
-        message (str): descriptive prefix for resulting column name (ex: Neo for neoantigen)
+#     Args:
+#         df (dataframe): pVACtools df
+#         message (str): descriptive prefix for resulting column name (ex: Neo for neoantigen)
     
-    Return:
-        dataframe: columns = message + peptide length, row = mut sequence count per peptide length
-    """
-    peptide_len = [8,9,10,11,15]
-    if len(df) > 0:
-        unique_seqs = df['MT Epitope Seq'].unique().tolist()
-        len_seqs = [len(x) for x in unique_seqs]
-        len_dict = {f'{message} Length {x}': len_seqs.count(x) for x in set(len_seqs)}
-        len_df = pd.DataFrame(len_dict, index=[0])
-    else:
-        len_df = pd.DataFrame({f'{message} Length {x}': "NA" for x in peptide_len}, index=[0])
-    return len_df
+#     Return:
+#         dataframe: columns = message + peptide length, row = mut sequence count per peptide length
+#     """
+#     peptide_len = [8,9,10,11,15]
+#     if len(df) > 0:
+#         unique_seqs = df['MT Epitope Seq'].unique().tolist()
+#         len_seqs = [len(x) for x in unique_seqs]
+#         len_dict = {f'{message} Length {x}': len_seqs.count(x) for x in set(len_seqs)}
+#         len_df = pd.DataFrame(len_dict, index=[0])
+#     else:
+#         len_df = pd.DataFrame({f'{message} Length {x}': "NA" for x in peptide_len}, index=[0])
+#     return len_df
         
 input_dir=sys.argv[1]
 output_filename=sys.argv[2]
@@ -154,7 +154,7 @@ for file1 in open_files:
     #total_len = length_count(df_variable, "Seq")
     #neo_len = length_count(pd.concat([neo_classI, neo_classII]), "Neo")
 
-    final_df_list = [file_info, constant_line, total_pred, classI_pred, classI_neo_pred, classII_pred, classII_neo_pred, total_scores, classI_scores, classII_scores, classI_min, classII_min, total_len, neo_len]
+    final_df_list = [file_info, constant_line, total_pred, classI_pred, classI_neo_pred, classII_pred, classII_neo_pred, total_scores, classI_scores, classII_scores] #, classI_min, classII_min, total_len, neo_len]
     df_merged = pd.concat(final_df_list, join='outer', axis=1)
 
     if os.path.isfile(output_file):
